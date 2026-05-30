@@ -20,6 +20,7 @@ export interface DownloadingItem {
   name: string;
   artists: string;
   progress: number;
+  speed?: string;
   status: "downloading" | "done" | "error";
   error?: string;
   attemptedQuality?: string;
@@ -94,6 +95,7 @@ export const useLocalStore = defineStore("local", () => {
         name: t.name,
         artists: t.artists,
         progress: t.progress,
+        speed: t.speed,
         status: t.status === "waiting" || t.status === "downloading" ? "downloading" : t.status,
         error: t.error,
       }));

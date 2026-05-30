@@ -127,6 +127,7 @@ async function retryDownload(item: { id: number; name: string; artists: string }
                 <span class="block h-full bg-apple-purple rounded-full transition-all" :style="{ width: item.progress + '%' }"></span>
               </span>
               <span class="text-xs text-apple-secondary ml-1.5 align-middle">{{ item.progress }}%</span>
+              <span v-if="item.speed" class="text-xs text-apple-secondary ml-1 align-middle">&middot; {{ item.speed }}</span>
             </span>
             <span v-else-if="item.status === 'error'" class="text-xs text-apple-red ml-2 font-medium truncate max-w-[200px]">{{ item.error || '下载失败' }}</span>
           </p>

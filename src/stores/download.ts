@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useSettingsStore } from "./settings";
 import { useLocalStore } from "./local";
 
@@ -22,11 +23,17 @@ export interface DownloadTask {
   status: "waiting" | "downloading" | "done" | "error";
   progress: number;
   fileSize: string;
+  speed?: string;
   hasCover: boolean;
   hasLyric: boolean;
   error?: string;
 }
 
+export interface DownloadProgressEvent {
+  song_id: number;
+  progress: number;
+  speed: string;
+}
 
 export interface PlaylistTrack {
   id: number;
@@ -70,6 +77,18 @@ export const useDownloadStore = defineStore("download", () => {
   const downloadQueue = ref<DownloadTask[]>([]);
   const isSearching = ref(false);
   const searchQuality = ref("standard");
+
+  // Listen for real-time download progress events from Rust backend
+  listen<DownloadProgressEvent>("download-progress", (event) => {
+    const { song_id, progress, speed } = event.payload;
+    for (const task of downloadQueue.value) {
+      if (task.id === song_id) {
+        task.progress = progress;
+        task.speed = speed;
+        break;
+      }
+    }
+  });
 
   const selectedCount = computed(() => selectedIds.value.size);
   const allSelected = computed(() =>

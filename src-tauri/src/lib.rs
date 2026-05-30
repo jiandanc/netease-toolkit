@@ -3,8 +3,11 @@ pub mod commands;
 pub mod ncm;
 pub mod converter;
 
+use std::time::Instant;
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use tauri::Emitter;
 use std::sync::Mutex;
 use std::collections::HashMap;
 
@@ -77,6 +80,13 @@ pub struct DownloadProgress {
     pub status: String,
 }
 
+#[derive(Clone, Serialize)]
+pub struct DownloadProgressPayload {
+    pub song_id: i64,
+    pub progress: u32,
+    pub speed: String,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct QrLoginResult {
     pub unikey: String,
@@ -98,6 +108,16 @@ pub struct LocalSongInfo {
 
 
 
+
+fn format_speed(bytes_per_sec: f64) -> String {
+    if bytes_per_sec > 1_000_000.0 {
+        format!("{:.1} MB/s", bytes_per_sec / 1_000_000.0)
+    } else if bytes_per_sec > 1_000.0 {
+        format!("{:.0} KB/s", bytes_per_sec / 1_000.0)
+    } else {
+        format!("{:.0} B/s", bytes_per_sec)
+    }
+}
 // ---------------------------------------------------------------------------
 // Download records & quality ladder
 // ---------------------------------------------------------------------------
@@ -269,6 +289,7 @@ async fn cmd_download_song(
     song_id: i64, quality: String, download_dir: String,
     download_cover: bool, download_lyric: bool,
     quality_fallback: bool,
+    app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let api = crate::commands::api::NeteaseApi::new();
@@ -277,8 +298,8 @@ async fn cmd_download_song(
 
     let detail = api.get_song_detail(song_id, &cookie).await.map_err(|e| e.to_string())?;
 
-    // Quality fallback ladder: try user-selected quality, then step down to standard
-    let start_idx = find_quality_index(&quality).unwrap_or(6); // default to standard index
+    // Quality fallback ladder
+    let start_idx = find_quality_index(&quality).unwrap_or(6);
     let mut url_info = None;
     let mut _final_quality = String::new();
     if quality_fallback {
@@ -316,15 +337,9 @@ async fn cmd_download_song(
               else { "mp3" };
     let audio_path = dir.join(format!("{}.{}", safe_name, ext));
 
-    // VIP songs need the MUSIC_U cookie on the CDN domain (music.126.net).
-    // We seed a cookie jar for both 163.com and 126.net so cookies
-    // follow every redirect automatically.
+    // Cookie jar setup (unchanged)
     let cookie_jar = reqwest::cookie::Jar::default();
     if !cookie.is_empty() {
-        // add_cookie_str expects Set-Cookie format (single cookie).
-        // Our stored cookie is Cookie header format (MUSIC_U=xxx; __csrf=yyy).
-        // Passing it directly causes __csrf to be dropped as an unknown attribute.
-        // Fix: split, and add each cookie separately with proper Set-Cookie format.
         if let Ok(url_163) = reqwest::Url::parse("https://music.163.com") {
             if let Ok(url_126) = reqwest::Url::parse("https://music.126.net") {
                 for part in cookie.split(';') {
@@ -357,12 +372,55 @@ async fn cmd_download_song(
         return Err(format!("Download returned HTTP {}: {}", status, text.chars().take(200).collect::<String>()));
     }
 
-    let audio_bytes = resp.bytes().await
-        .map_err(|e| format!("Read response body: {}", e))?;
+    let total_size = url_info.size.max(1) as u64;
+    let mut downloaded: u64 = 0;
+    let mut last_emit_downloaded: u64 = 0;
+    let mut last_emit = Instant::now();
+    let emit_interval = std::time::Duration::from_millis(200);
 
-    std::fs::write(&audio_path, &audio_bytes).map_err(|e| e.to_string())?;
+    // Write file while streaming
+    use std::io::Write;
+    let mut file = std::fs::File::create(&audio_path).map_err(|e| e.to_string())?;
+    let mut stream = resp.bytes_stream();
+    loop {
+        match stream.next().await {
+            Some(Ok(chunk)) => {
+                file.write_all(&chunk).map_err(|e| e.to_string())?;
+                downloaded += chunk.len() as u64;
 
-    // Embed metadata tags (title, artist, album, track, year) into the audio file
+                let elapsed = last_emit.elapsed();
+                if elapsed >= emit_interval {
+                    let bytes_since = downloaded - last_emit_downloaded;
+                    let speed = bytes_since as f64 / elapsed.as_secs_f64();
+                    let progress = ((downloaded * 100) / total_size).min(100) as u32;
+                    let speed_str = format_speed(speed);
+                    let _ = app_handle.emit("download-progress", DownloadProgressPayload {
+                        song_id,
+                        progress,
+                        speed: speed_str,
+                    });
+                    last_emit_downloaded = downloaded;
+                    last_emit = Instant::now();
+                }
+            }
+            Some(Err(e)) => {
+                return Err(format!("Download stream error: {}", e));
+            }
+            None => break, // stream complete
+        }
+    }
+    // Emit final progress event
+    let _ = app_handle.emit("download-progress", DownloadProgressPayload {
+        song_id,
+        progress: 100,
+        speed: String::new(),
+    });
+
+    file.flush().map_err(|e| e.to_string())?;
+    let file_size = file.metadata().ok().map(|m| m.len()).unwrap_or(0);
+    drop(file);
+
+    // Embed metadata
     let _ = crate::converter::embed_metadata_after(
         &audio_path,
         &detail.name,
@@ -398,7 +456,7 @@ async fn cmd_download_song(
     Ok(serde_json::json!({
         "success": true,
         "filePath": audio_path.to_string_lossy().to_string(),
-        "hasCover": has_cover, "hasLyric": has_lyric, "fileSize": audio_bytes.len(),
+        "hasCover": has_cover, "hasLyric": has_lyric, "fileSize": file_size,
         "quality": final_quality_with_type
     }))
 }
