@@ -1,6 +1,7 @@
 # NetEase Toolkit
 
 一款基于 Tauri v2 构建的桌面工具，主要用于**将歌词和封面嵌入音频文件**，让歌曲在 Apple Music 等播放器中完整展示封面和歌词。
+
 Apple Music多端同步方法：将音频文件拖动到Mac/win Apple Music的资料库-歌曲，上传完毕后后自动多端同步
 
 
