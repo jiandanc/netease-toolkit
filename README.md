@@ -13,6 +13,8 @@
 - 封面支持：`.jpg` / `.png`
 - 歌词支持：`.lrc` 文件（Apple Music 目前仅展示静态歌词，时间戳不会解析）
 - 自动匹配：同名文件自动配对，无需手动指定
+<img width="1167" height="812" alt="image" src="https://github.com/user-attachments/assets/5199bbaa-555c-4f46-95b9-9cb59d797e7e" />
+
 
 ### 网易云音乐下载
 
