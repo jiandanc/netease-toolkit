@@ -26,6 +26,7 @@ Apple Music多端同步方法：将音频文件拖动到Mac/Win Apple Music的�
 - VIP 歌曲需登录后下载
 - **降音质重试**：高音质不可用时自动回退到较低音质
 - 下载时同步保存封面和 LRC 歌词到本地
+<img width="1684" height="1243" alt="image" src="https://github.com/user-attachments/assets/13cc8a3c-1653-4e1b-95f8-d4731ddf8504" />
 
 
 ### 格式转换
@@ -56,13 +57,7 @@ Music/
 5. 点击「开始转换」
 
 转换完成后，输出目录中的音频文件已包含封面和歌词，将其导入 Apple Music 即可显示。
-
-### 3. 从网易云下载
-
-1. 点击右上角头像按钮，通过二维码登录
-2. 切换到「下载」页面
-3. 搜索歌曲或粘贴歌单/专辑链接
-4. 选中歌曲，点击「下载」
+<img width="1684" height="1243" alt="image" src="https://github.com/user-attachments/assets/0f4a5cc9-70f7-41d6-9a61-0a82fa3d41aa" />
 
 
 ## macOS 使用说明
