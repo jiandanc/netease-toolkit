@@ -15,6 +15,7 @@ Apple Music多端同步方法：将音频文件拖动到Mac/Win Apple Music的�
 - 封面支持：`.jpg` / `.png`
 - 歌词支持：`.lrc` 文件（Apple Music 目前仅展示静态歌词，时间戳不会解析）
 - 自动匹配：同名文件自动配对，无需手动指定
+
 <img width="1167" height="812" alt="image" src="https://github.com/user-attachments/assets/5199bbaa-555c-4f46-95b9-9cb59d797e7e" />
 
 
@@ -26,6 +27,7 @@ Apple Music多端同步方法：将音频文件拖动到Mac/Win Apple Music的�
 - VIP 歌曲需登录后下载
 - **降音质重试**：高音质不可用时自动回退到较低音质
 - 下载时同步保存封面和 LRC 歌词到本地
+
 <img width="1684" height="1243" alt="image" src="https://github.com/user-attachments/assets/13cc8a3c-1653-4e1b-95f8-d4731ddf8504" />
 
 
@@ -57,6 +59,7 @@ Music/
 5. 点击「开始转换」
 
 转换完成后，输出目录中的音频文件已包含封面和歌词，将其导入 Apple Music 即可显示。
+
 <img width="1684" height="1243" alt="image" src="https://github.com/user-attachments/assets/0f4a5cc9-70f7-41d6-9a61-0a82fa3d41aa" />
 
 
