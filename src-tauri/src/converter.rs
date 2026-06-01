@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs::File;
+use id3::TagLike;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
@@ -115,6 +116,21 @@ pub async fn convert_audio_async(params: &ConvertParams, app_handle: &AppHandle)
         // Lossless sources (flac) always cap at 192kbps; otherwise match source quality
         let target_bitrate = if input_ext == "flac" {
             192_000
+        } else if input_ext == "mp3" && params.output_format == "m4a" {
+            let source_kbps = nearest_mp3_bitrate(estimated_bps) / 1000;
+            if source_kbps <= 64 {
+                48_000
+            } else if source_kbps <= 96 {
+                80_000
+            } else if source_kbps <= 128 {
+                96_000
+            } else if source_kbps <= 192 {
+                128_000
+            } else if source_kbps <= 256 {
+                192_000
+            } else {
+                256_000
+            }
         } else {
             nearest_cbr_bitrate(estimated_bps)
         };
@@ -151,24 +167,50 @@ pub async fn convert_audio_async(params: &ConvertParams, app_handle: &AppHandle)
     // ---- Embed cover & lyrics ----
     if params.embed_cover {
         let parent = input.parent().unwrap_or(Path::new("."));
+        let mut cover_embedded = false;
         for ext in &["jpg", "png"] {
             let cp = parent.join(format!("{}.{}", file_stem, ext));
             if cp.exists() {
                 embed_cover_after(&output_path, &cp.to_string_lossy(), &params.output_format)
                     .map_err(|e| format!("嵌入封面失败: {}", e))?;
+                cover_embedded = true;
                 break;
             }
+        }
+        if !cover_embedded && input_ext != params.output_format {
+            if let Some((pic_data, _mime)) = extract_builtin_cover(&input, &input_ext) {
+                let tmp_cover = output_path.with_extension("tmp_cover.jpg");
+                if std::fs::write(&tmp_cover, &pic_data).is_ok() {
+                    let _ = embed_cover_after(&output_path, &tmp_cover.to_string_lossy(), &params.output_format);
+                    let _ = std::fs::remove_file(&tmp_cover);
+                }
+            }
+        }
+    } else {
+        if input_ext == params.output_format {
+            let _ = remove_builtin_cover(&output_path, &params.output_format);
         }
     }
 
     if params.embed_lyric {
         let parent = input.parent().unwrap_or(Path::new("."));
+        let mut lyric_embedded = false;
         let lp = parent.join(format!("{}.lrc", file_stem));
         if lp.exists() {
-            let lyric_text = std::fs::read_to_string(&lp)
-                .map_err(|e| format!("读取歌词文件失败: {}", e))?;
-            embed_lyrics_after(&output_path, &lyric_text, &params.output_format)
-                .map_err(|e| format!("嵌入歌词失败: {}", e))?;
+            if let Ok(lyric_text) = std::fs::read_to_string(&lp) {
+                embed_lyrics_after(&output_path, &lyric_text, &params.output_format)
+                    .map_err(|e| format!("嵌入歌词失败: {}", e))?;
+                lyric_embedded = true;
+            }
+        }
+        if !lyric_embedded && input_ext != params.output_format {
+            if let Some(lyric_text) = extract_builtin_lyrics(&input, &input_ext) {
+                let _ = embed_lyrics_after(&output_path, &lyric_text, &params.output_format);
+            }
+        }
+    } else {
+        if input_ext == params.output_format {
+            let _ = remove_builtin_lyrics(&output_path, &params.output_format);
         }
     }
 
@@ -537,6 +579,24 @@ fn nearest_cbr_bitrate(estimated_bps: u32) -> u32 {
     }
     best
 }
+
+/// Map an estimated source bitrate (in bps) to the nearest standard MP3 CBR value
+fn nearest_mp3_bitrate(estimated_bps: u32) -> u32 {
+    const STANDARD_MP3_RATES: &[u32] = &[
+        32_000, 40_000, 48_000, 56_000, 64_000, 80_000, 96_000, 112_000,
+        128_000, 160_000, 192_000, 224_000, 256_000, 320_000
+    ];
+    let mut best = 192_000;
+    let mut min_diff = u32::MAX;
+    for &r in STANDARD_MP3_RATES {
+        let diff = if estimated_bps > r { estimated_bps - r } else { r - estimated_bps };
+        if diff < min_diff {
+            min_diff = diff;
+            best = r;
+        }
+    }
+    best
+}
 /// Shared metadata struct used for both download embedding and cross-format migration.
 pub struct AudioMetadata {
     pub title: Option<String>,
@@ -735,5 +795,132 @@ fn embed_lyrics_after(audio_path: &Path, lyric_text: &str, format: &str) -> Resu
             Ok(())
         }
         _ => Ok(()),
+    }
+}
+
+fn extract_builtin_cover(path: &Path, ext: &str) -> Option<(Vec<u8>, String)> {
+    match ext {
+        "mp3" => {
+            let tag = id3::Tag::read_from_path(path).ok()?;
+            let pic = tag.pictures().find(|p| p.picture_type == id3::frame::PictureType::CoverFront)
+                .or_else(|| tag.pictures().next())?;
+            Some((pic.data.clone(), pic.mime_type.clone()))
+        }
+        "m4a" => {
+            let tag = mp4ameta::Tag::read_from_path(path).ok()?;
+            let artwork = tag.artworks().next()?;
+            let mime = match artwork.fmt {
+                mp4ameta::ImgFmt::Png => "image/png".to_string(),
+                mp4ameta::ImgFmt::Jpeg => "image/jpeg".to_string(),
+                _ => "image/jpeg".to_string(),
+            };
+            Some((artwork.data.to_vec(), mime))
+        }
+        _ => None,
+    }
+}
+
+fn extract_builtin_lyrics(path: &Path, ext: &str) -> Option<String> {
+    match ext {
+        "mp3" => {
+            let tag = id3::Tag::read_from_path(path).ok()?;
+            let lyrics = tag.lyrics().next()?;
+            Some(lyrics.text.clone())
+        }
+        "m4a" => {
+            let tag = mp4ameta::Tag::read_from_path(path).ok()?;
+            tag.lyrics().map(|s| s.to_string())
+        }
+        _ => None,
+    }
+}
+
+fn remove_builtin_cover(path: &Path, ext: &str) -> Result<(), String> {
+    match ext {
+        "mp3" => {
+            let mut tag = id3::Tag::read_from_path(path)
+                .unwrap_or_else(|_| id3::Tag::new());
+            tag.remove_all_pictures();
+            tag.write_to_path(path, id3::Version::Id3v24).map_err(|e| e.to_string())
+        }
+        "m4a" => {
+            let mut tag = mp4ameta::Tag::read_from_path(path).map_err(|e| e.to_string())?;
+            tag.remove_data_of(&mp4ameta::Fourcc(*b"covr"));
+            tag.write_to_path(path).map_err(|e| e.to_string())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn remove_builtin_lyrics(path: &Path, ext: &str) -> Result<(), String> {
+    match ext {
+        "mp3" => {
+            let mut tag = id3::Tag::read_from_path(path)
+                .unwrap_or_else(|_| id3::Tag::new());
+            tag.remove_all_lyrics();
+            tag.write_to_path(path, id3::Version::Id3v24).map_err(|e| e.to_string())
+        }
+        "m4a" => {
+            let mut tag = mp4ameta::Tag::read_from_path(path).map_err(|e| e.to_string())?;
+            tag.remove_data_of(&mp4ameta::Fourcc(*b"\xa9lyr"));
+            tag.write_to_path(path).map_err(|e| e.to_string())
+        }
+        _ => Ok(()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nearest_mp3_bitrate() {
+        assert_eq!(nearest_mp3_bitrate(31_500), 32_000);
+        assert_eq!(nearest_mp3_bitrate(63_800), 64_000);
+        assert_eq!(nearest_mp3_bitrate(128_500), 128_000);
+        assert_eq!(nearest_mp3_bitrate(193_200), 192_000);
+        assert_eq!(nearest_mp3_bitrate(322_000), 320_000);
+    }
+
+    #[test]
+    fn test_mp3_to_m4a_bitrate_mapping() {
+        let map = |estimated: u32| {
+            let source_kbps = nearest_mp3_bitrate(estimated) / 1000;
+            if source_kbps <= 64 {
+                48_000
+            } else if source_kbps <= 96 {
+                80_000
+            } else if source_kbps <= 128 {
+                96_000
+            } else if source_kbps <= 192 {
+                128_000
+            } else if source_kbps <= 256 {
+                192_000
+            } else {
+                256_000
+            }
+        };
+
+        // ≤64k -> 48k
+        assert_eq!(map(32_000), 48_000);
+        assert_eq!(map(64_000), 48_000);
+        // 65k-96k -> 80k
+        assert_eq!(map(80_000), 80_000);
+        assert_eq!(map(96_000), 80_000);
+        // 97k-128k -> 96k
+        assert_eq!(map(112_000), 96_000);
+        assert_eq!(map(128_000), 96_000);
+        // 129k-192k -> 128k
+        assert_eq!(map(160_000), 128_000);
+        assert_eq!(map(192_000), 128_000);
+        // 193k-256k -> 192k
+        assert_eq!(map(224_000), 192_000);
+        assert_eq!(map(256_000), 192_000);
+        // >256k -> 256k
+        assert_eq!(map(320_000), 256_000);
     }
 }
