@@ -13,6 +13,7 @@ export interface LocalSong {
   hasCover: boolean;
   hasLyric: boolean;
   quality: string;
+  source: string;
 }
 
 export interface DownloadingItem {
@@ -30,6 +31,7 @@ export const useLocalStore = defineStore("local", () => {
   const songs = ref<LocalSong[]>([]);
   const selectedPaths = ref<Set<string>>(new Set());
   const searchQuery = ref("");
+  const sourceFilter = ref<"all" | "download" | "converted">("all");
   const isLoading = ref(false);
 
   /** Synced from download store — items currently being downloaded */
@@ -40,11 +42,17 @@ export const useLocalStore = defineStore("local", () => {
   );
 
   const filteredSongs = computed(() => {
-    if (!searchQuery.value.trim()) return songs.value;
-    const q = searchQuery.value.toLowerCase();
-    return songs.value.filter(
-      (s) => s.name.toLowerCase().includes(q) || s.artists.toLowerCase().includes(q)
-    );
+    let list = songs.value;
+    if (sourceFilter.value !== "all") {
+      list = list.filter(s => s.source === sourceFilter.value);
+    }
+    if (searchQuery.value.trim()) {
+      const q = searchQuery.value.toLowerCase();
+      list = list.filter(
+        (s) => s.name.toLowerCase().includes(q) || s.artists.toLowerCase().includes(q)
+      );
+    }
+    return list;
   });
 
   const selectedCount = computed(() => selectedPaths.value.size);
@@ -73,10 +81,12 @@ export const useLocalStore = defineStore("local", () => {
   async function scanLocal() {
     isLoading.value = true;
     const settings = useSettingsStore();
+    const dirs = [settings.settings.downloadPath];
+    if (settings.settings.convertOutputPath && settings.settings.convertOutputPath !== settings.settings.downloadPath) {
+      dirs.push(settings.settings.convertOutputPath);
+    }
     try {
-      const results = await invoke<LocalSong[]>("cmd_scan_local_dir", {
-        dir: settings.settings.downloadPath,
-      });
+      const results = await invoke<LocalSong[]>("cmd_scan_local_dir", { dirs });
       songs.value = results;
     } catch (e) {
       console.error("Scan local failed:", e);
@@ -127,7 +137,7 @@ export const useLocalStore = defineStore("local", () => {
   }
 
   return {
-    songs, selectedPaths, searchQuery, isLoading,
+    songs, selectedPaths, searchQuery, sourceFilter, isLoading,
     downloadingItems, downloadingCount,
     filteredSongs, selectedCount, allSelected,
     toggleSelect, toggleSelectAll, scanLocal,

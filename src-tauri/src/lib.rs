@@ -104,6 +104,7 @@ pub struct LocalSongInfo {
     pub has_cover: bool,
     pub has_lyric: bool,
     pub quality: String,
+    pub source: String,
 }
 
 
@@ -466,10 +467,7 @@ async fn cmd_download_song(
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-async fn cmd_scan_local_dir(dir: String) -> Result<Vec<LocalSongInfo>, String> {
-    let dir_path = std::path::PathBuf::from(&dir);
-    if !dir_path.exists() { return Ok(Vec::new()); }
-
+async fn cmd_scan_local_dir(dirs: Vec<String>) -> Result<Vec<LocalSongInfo>, String> {
     // Load download records if they exist alongside the settings
     let app_data_dir = dirs_next::data_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -478,44 +476,56 @@ async fn cmd_scan_local_dir(dir: String) -> Result<Vec<LocalSongInfo>, String> {
     let records = read_download_records(&records_path.to_string_lossy());
 
     let mut songs = Vec::new();
-    let mut entries: Vec<_> = std::fs::read_dir(&dir_path)
-        .map_err(|e| e.to_string())?
-        .filter_map(|e| e.ok()).collect();
-    entries.sort_by_key(|e| e.file_name());
+    let mut seen_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    for entry in entries {
-        let path = entry.path();
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-        if !["mp3", "flac", "m4a"].contains(&ext.as_str()) { continue; }
+    for (idx, dir) in dirs.iter().enumerate() {
+        let dir_path = std::path::PathBuf::from(dir);
+        if !dir_path.exists() { continue; }
 
-        let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
-        let file_size = std::fs::metadata(&path).ok().map(|m| {
-            let len = m.len();
-            if len > 1024 * 1024 { format!("{:.1}MB", len as f64 / (1024.0 * 1024.0)) }
-            else { format!("{:.0}KB", len as f64 / 1024.0) }
-        }).unwrap_or_default();
+        let source = if idx == 0 { "download" } else { "converted" };
 
-        let has_cover = dir_path.join(format!("{}.jpg", file_stem)).exists()
-                     || dir_path.join(format!("{}.png", file_stem)).exists();
-        let has_lyric = dir_path.join(format!("{}.lrc", file_stem)).exists();
+        let mut entries: Vec<_> = std::fs::read_dir(&dir_path)
+            .map_err(|e| e.to_string())?
+            .filter_map(|e| e.ok()).collect();
+        entries.sort_by_key(|e| e.file_name());
 
-        // Determine quality: check records first, then infer from ext
-        let quality = records.get(&file_stem)
-            .cloned()
-            .unwrap_or_else(|| infer_quality_from_ext(&ext).to_string());
+        for entry in entries {
+            let path = entry.path();
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+            if !["mp3", "flac", "m4a"].contains(&ext.as_str()) { continue; }
 
-        // Read name/artist from embedded tags
-        let (name, artists) = match crate::converter::read_metadata_from(&path, &ext) {
-            Some(meta) => {
-                let n = meta.title.unwrap_or_else(|| file_stem.clone());
-                let a = meta.artist.unwrap_or_default();
-                (n, a)
-            }
-            None => (file_stem.clone(), String::new()),
-        };
+            let path_str = path.to_string_lossy().to_string();
+            if !seen_paths.insert(path_str.clone()) { continue; }
 
-        songs.push(LocalSongInfo { name, artists, format: ext, file_size,
-            file_path: path.to_string_lossy().to_string(), has_cover, has_lyric, quality });
+            let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+            let file_size = std::fs::metadata(&path).ok().map(|m| {
+                let len = m.len();
+                if len > 1024 * 1024 { format!("{:.1}MB", len as f64 / (1024.0 * 1024.0)) }
+                else { format!("{:.0}KB", len as f64 / 1024.0) }
+            }).unwrap_or_default();
+
+            let has_cover = dir_path.join(format!("{}.jpg", file_stem)).exists()
+                         || dir_path.join(format!("{}.png", file_stem)).exists();
+            let has_lyric = dir_path.join(format!("{}.lrc", file_stem)).exists();
+
+            // Determine quality: check records first, then infer from ext
+            let quality = records.get(&file_stem)
+                .cloned()
+                .unwrap_or_else(|| infer_quality_from_ext(&ext).to_string());
+
+            // Read name/artist from embedded tags
+            let (name, artists) = match crate::converter::read_metadata_from(&path, &ext) {
+                Some(meta) => {
+                    let n = meta.title.unwrap_or_else(|| file_stem.clone());
+                    let a = meta.artist.unwrap_or_default();
+                    (n, a)
+                }
+                None => (file_stem.clone(), String::new()),
+            };
+
+            songs.push(LocalSongInfo { name, artists, format: ext, file_size,
+                file_path: path_str, has_cover, has_lyric, quality, source: source.to_string() });
+        }
     }
     Ok(songs)
 }

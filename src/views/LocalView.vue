@@ -61,6 +61,14 @@ async function retryDownload(item: { id: number; name: string; artists: string }
             <svg :class="{ invisible: !local.allSelected }" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           </button>
           <span class="text-sm text-apple-text font-medium">本地 ({{ local.songs.length }})</span>
+          <select
+            v-model="local.sourceFilter"
+            class="px-2 py-1 rounded-lg border border-apple-divider bg-white text-xs text-apple-text outline-none focus:ring-2 focus:ring-apple-purple/20 focus:border-apple-purple transition-all cursor-pointer"
+          >
+            <option value="all">全部</option>
+            <option value="download">已下载</option>
+            <option value="converted">已转码</option>
+          </select>
           <span :class="{ invisible: local.selectedCount <= 0 }" class="text-xs text-apple-purple font-medium">已选 {{ local.selectedCount }} 首</span>
         </div>
 
@@ -166,7 +174,7 @@ async function retryDownload(item: { id: number; name: string; artists: string }
         <svg class="w-5 h-5 text-apple-secondary shrink-0 mr-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
 
         <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-apple-text truncate">{{ song.name }} <span class="text-apple-secondary font-normal">- {{ song.artists }}</span></p>
+          <p class="text-sm font-medium text-apple-text truncate">{{ song.name }} <span class="text-apple-secondary font-normal">- {{ song.artists }}</span><span v-if="song.source === 'converted'" class="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-apple-blue/10 text-apple-blue">转码</span></p>
           <p class="text-xs text-apple-secondary">{{ song.format.toUpperCase() }} &middot; {{ song.fileSize }} &middot; {{ qualityLabelMap[song.quality] || song.quality }}</p>
         </div>
 
