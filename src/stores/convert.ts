@@ -15,7 +15,7 @@ export interface ConvertTask {
 export const useConvertStore = defineStore("convert", () => {
   const tasks = ref<ConvertTask[]>([]);
   const showModal = ref(false);
-  const format = ref("mp3");
+  const format = ref("m4a");
   const embedCover = ref(true);
   const embedLyric = ref(true);
   const outputPath = ref("");

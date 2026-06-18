@@ -76,7 +76,7 @@ export const useDownloadStore = defineStore("download", () => {
   const selectedIds = ref<Set<number>>(new Set());
   const downloadQueue = ref<DownloadTask[]>([]);
   const isSearching = ref(false);
-  const searchQuality = ref("standard");
+  const searchQuality = ref("exhigh");
 
   // Listen for real-time download progress events from Rust backend
   listen<DownloadProgressEvent>("download-progress", (event) => {

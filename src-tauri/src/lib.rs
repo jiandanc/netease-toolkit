@@ -614,13 +614,13 @@ async fn cmd_load_settings(state: State<'_, AppState>) -> Result<serde_json::Val
         let default_download_path = default_download_dir.to_string_lossy().to_string();
         Ok(serde_json::json!({
             "downloadPath": default_download_path,
-            "downloadQuality": "standard",
+            "downloadQuality": "exhigh",
             "downloadCover": true,
             "qualityFallback": true,
             "downloadLyric": true,
             "maxConcurrentDownloads": 5,
             "maxConcurrentConverts": 5,
-            "convertFormat": "mp3",
+            "convertFormat": "m4a",
             "convertOutputPath": default_download_dir.join("Converted").to_string_lossy().to_string()
         }))
     }

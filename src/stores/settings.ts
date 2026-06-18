@@ -18,10 +18,10 @@ export interface AppSettings {
 export const useSettingsStore = defineStore("settings", () => {
   const settings = ref<AppSettings>({
     downloadPath: "",
-    downloadQuality: "standard",
+    downloadQuality: "exhigh",
     downloadCover: true,
     downloadLyric: true,
-    convertFormat: "mp3",
+    convertFormat: "m4a",
     convertOutputPath: "",
     qualityFallback: true,
     maxConcurrentDownloads: 5,
